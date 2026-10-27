@@ -1,19 +1,14 @@
+import { randomUUID } from "node:crypto";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
+import { EXPECTED_AMOUNTS_KOBO, isPaymentType } from "./payment-policy.js";
 
 initializeApp();
 
 const db = getFirestore();
 const paystackSecretKey = defineSecret("PAYSTACK_SECRET_KEY");
-
-const EXPECTED_AMOUNTS_KOBO = {
-  one_on_one: 10_000_000,
-  monthly: 1_000_000,
-} as const;
-
-type PaymentType = keyof typeof EXPECTED_AMOUNTS_KOBO;
 
 interface PaystackVerificationResponse {
   status: boolean;
@@ -30,10 +25,74 @@ interface PaystackVerificationResponse {
 }
 
 /**
+ * Creates a server-authoritative payment record.
+ *
+ * The client may choose a supported product type, but cannot choose the user,
+ * email, amount, currency, reference, or initial status. This creates the
+ * Firestore intent used by the existing Paystack popup integration; it does
+ * not itself initialize a transaction with Paystack.
+ */
+export const createPaymentIntent = onCall(
+  { region: "us-central1" },
+  async (request) => {
+    const uid = request.auth?.uid;
+    if (!uid) {
+      throw new HttpsError("unauthenticated", "Sign in before starting a payment.");
+    }
+
+    const paymentType = request.data?.paymentType;
+    if (!isPaymentType(paymentType)) {
+      throw new HttpsError(
+        "invalid-argument",
+        "Choose a supported payment type: monthly or one_on_one.",
+      );
+    }
+
+    const emailClaim = request.auth?.token?.email;
+    if (typeof emailClaim !== "string" || !emailClaim.trim()) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Your account must have an email address before starting a payment.",
+      );
+    }
+
+    const email = emailClaim.trim().toLowerCase();
+    const amount = EXPECTED_AMOUNTS_KOBO[paymentType];
+    const reference = `skillforge_${randomUUID().replace(/-/g, "")}`;
+    const paymentRef = db.collection("payments").doc();
+
+    await paymentRef.create({
+      userId: uid,
+      email,
+      paymentType,
+      amount,
+      currency: "NGN",
+      reference,
+      status: "pending",
+      createdAt: FieldValue.serverTimestamp(),
+      updatedAt: FieldValue.serverTimestamp(),
+      intentProvider: "paystack",
+      intentVersion: 1,
+    });
+
+    // Return only the checkout fields the client needs. Price and reference
+    // are generated here, never accepted from client input.
+    return {
+      paymentId: paymentRef.id,
+      paymentType,
+      amount,
+      currency: "NGN",
+      email,
+      reference,
+    };
+  },
+);
+
+/**
  * A browser callback is not proof of payment. This callable verifies the
  * transaction against Paystack's authenticated API before updating Firestore.
- * It intentionally does not grant product entitlements; those must be mapped
- * to SkillForge's agreed access policy separately.
+ * It intentionally does not grant one_on_one entitlements; those must be
+ * mapped to SkillForge's agreed access policy separately.
  */
 export const verifyPaystackPayment = onCall(
   {
@@ -51,6 +110,7 @@ export const verifyPaystackPayment = onCall(
     if (
       typeof paymentId !== "string" ||
       paymentId.length < 1 ||
+      paymentId.length > 200 ||
       typeof reference !== "string" ||
       reference.length < 1 ||
       reference.length > 200
@@ -71,14 +131,22 @@ export const verifyPaystackPayment = onCall(
     if (payment.reference !== reference) {
       throw new HttpsError("invalid-argument", "Payment reference does not match the payment record.");
     }
-    if (payment.paymentType !== "one_on_one" && payment.paymentType !== "monthly") {
+    if (!isPaymentType(payment.paymentType)) {
       throw new HttpsError("failed-precondition", "Unsupported payment type.");
     }
 
-    const paymentType = payment.paymentType as PaymentType;
+    const paymentType = payment.paymentType;
     const expectedAmount = EXPECTED_AMOUNTS_KOBO[paymentType];
-    if (payment.amount !== expectedAmount || payment.currency !== "NGN") {
-      throw new HttpsError("failed-precondition", "Payment amount or currency does not match the expected price.");
+    if (
+      payment.amount !== expectedAmount ||
+      payment.currency !== "NGN" ||
+      payment.intentVersion !== 1 ||
+      payment.intentProvider !== "paystack"
+    ) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Payment intent is invalid or does not match the expected price.",
+      );
     }
 
     if (payment.status === "completed" && payment.verifiedAt) {
@@ -108,7 +176,13 @@ export const verifyPaystackPayment = onCall(
       throw new HttpsError("unavailable", "The payment provider could not verify this transaction.");
     }
 
-    const verification = (await response.json()) as PaystackVerificationResponse;
+    let verification: PaystackVerificationResponse;
+    try {
+      verification = (await response.json()) as PaystackVerificationResponse;
+    } catch {
+      throw new HttpsError("unavailable", "The payment provider returned an unreadable response.");
+    }
+
     const transaction = verification.data;
     if (
       !verification.status ||
@@ -118,7 +192,10 @@ export const verifyPaystackPayment = onCall(
       transaction.amount !== expectedAmount ||
       transaction.currency !== "NGN"
     ) {
-      throw new HttpsError("failed-precondition", "Paystack has not confirmed a matching successful payment.");
+      throw new HttpsError(
+        "failed-precondition",
+        "Paystack has not confirmed a matching successful payment.",
+      );
     }
 
     const providerEmail = transaction.customer?.email?.trim().toLowerCase();
@@ -139,8 +216,16 @@ export const verifyPaystackPayment = onCall(
       }
 
       const latest = latestSnapshot.data()!;
-      if (latest.userId !== uid || latest.reference !== reference) {
-        throw new HttpsError("permission-denied", "Payment ownership changed unexpectedly.");
+      if (
+        latest.userId !== uid ||
+        latest.reference !== reference ||
+        latest.amount !== expectedAmount ||
+        latest.currency !== "NGN" ||
+        latest.paymentType !== paymentType ||
+        latest.intentVersion !== 1 ||
+        latest.intentProvider !== "paystack"
+      ) {
+        throw new HttpsError("permission-denied", "Payment intent changed unexpectedly.");
       }
       if (latest.status === "completed" && latest.verifiedAt) return true;
       if (latest.status !== "pending") {
