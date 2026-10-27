@@ -45,7 +45,7 @@ The application is currently a client-heavy Firebase app. Firebase Auth handles 
 | Operation | Data access | Required permission / rule |
 |---|---|---|
 | Save name/bio/avatar (`updateUserProfile`) | Client updates `users/{uid}` using object spread | Only owner may update allowlisted profile fields. Deny changes to `role`, email verification, subscription/payment/entitlement fields, moderation flags, and server-managed timestamps. |
-| Upload profile photo | Firebase Storage via `uploadProfilePhoto` | Auth UID must own the path; allow image MIME types and strict size limit; deny arbitrary path writes. |
+| Upload profile photo | Cloudinary via `uploadProfilePhoto` | Auth UID must own the path; allow image MIME types and strict size limit; deny arbitrary path writes. |
 | Upload course thumbnail | Firebase Storage via `uploadCourseImage` | Authenticated instructor must own the course/path; image MIME and size limits. |
 | Upload lesson video | Firebase Storage via `uploadVideo` | Course owner only; video MIME allowlist and size limits. Protect download/read access according to course publication/enrollment policy. |
 
