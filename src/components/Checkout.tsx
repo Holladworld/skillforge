@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { loadPaystackScript, initializePaystack, generateReference, PAYSTACK_PUBLIC_KEY, PRICING } from "@/services/paystack";
 import { createPayment, updatePaymentStatus } from "@/lib/firestore";
+import { verifyPaystackPayment } from "@/services/payments";
 import { toast } from "sonner";
 import { Loader2, CheckCircle, CreditCard, X } from "lucide-react";
 
@@ -60,24 +61,29 @@ export default function Checkout({ paymentType, onClose, onSuccess }: CheckoutPr
         publicKey: PAYSTACK_PUBLIC_KEY,
         description: pricing.description,
         callback: async (result: any) => {
-          if (result.status === "success") {
-            try {
-              // Update payment status in Firestore
-              await updatePaymentStatus(paymentId, "completed", result);
-              toast.success("Payment successful! Welcome to SkillForge!");
+          try {
+            if (result.status === "success") {
+              // Never trust the browser callback alone. The callable verifies the
+              // reference, amount, currency and provider status with Paystack.
+              await verifyPaystackPayment(paymentId, reference);
+              toast.success("Payment verified successfully!");
               onSuccess();
-            } catch (error) {
-              console.error("Error updating payment:", error);
-              toast.error("Payment succeeded but failed to update records. Please contact support.");
+            } else if (result.status === "cancelled") {
+              await updatePaymentStatus(paymentId, "cancelled");
+              toast.info("Payment cancelled");
+            } else {
+              await updatePaymentStatus(paymentId, "failed");
+              toast.error("Payment failed. Please try again.");
             }
-          } else if (result.status === "cancelled") {
-            await updatePaymentStatus(paymentId, "cancelled", result);
-            toast.info("Payment cancelled");
-          } else {
-            await updatePaymentStatus(paymentId, "failed", result);
-            toast.error("Payment failed. Please try again.");
+          } catch (error: any) {
+            console.error("Payment verification/update error:", error);
+            toast.error(
+              error?.message ||
+                "We couldn't verify the payment yet. Please contact support before trying again.",
+            );
+          } finally {
+            setProcessing(false);
           }
-          setProcessing(false);
         },
         onClose: () => {
           setProcessing(false);
