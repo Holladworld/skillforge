@@ -100,6 +100,26 @@ The application is currently a client-heavy Firebase app. Firebase Auth handles 
 | Read cohort members | `getCohortStudents`, `getStudentCohorts` | Student reads own memberships; cohort owner reads members of own cohorts. |
 | Send/read broadcasts | Client `addDoc` to `broadcasts`; `getBroadcasts` reads all | Define admin-only vs instructor-to-own-cohort audience; never trust client-supplied sender identity or recipient list. Use server-side authorization and targeted delivery. |
 
+
+
+## Frontend boundary and handoff to Adechris
+
+**Ownership rule:** this branch's remaining implementation work is backend-only. Do not edit existing frontend files to accommodate backend implementation. If an existing UI or client call must change, report it to the project owner with the exact file, current behavior, and proposed adjustment so Adechris can make the frontend change.
+
+### Frontend changes to discuss with Adechris (not implemented here)
+
+| Frontend file / area | Why a change may be needed | Suggested handoff |
+|---|---|---|
+| `src/pages/auth/ForgotPassword.tsx` | Current page appears to show a local success state without invoking Firebase Auth. | Connect the existing form to `sendPasswordResetEmail`; show a generic response and handle errors without account enumeration. |
+| `src/pages/student/CourseLearning.tsx` | It reads a course document directly and uses local lesson-position state for progress. | Route protected lesson retrieval through the approved backend access flow, and call the backend progress operation when progress changes. Preserve the existing UI. |
+| `src/pages/auth/Register.tsx` and `src/contexts/AuthContext.tsx` | Registration currently offers student/instructor role selection and writes the selected role from the client. | Keep the existing UI if desired, but role assignment must be decided by server policy. If instructors require approval, explain the approval state in the UI. |
+| `src/pages/instructor/CreateCourse.tsx`, `src/pages/instructor/EditCourse.tsx` | These pages write course documents from the browser. | Replace direct trusted writes with calls to backend course operations once their API contract is agreed; keep form layout and visual design unchanged. |
+| `src/components/Checkout.tsx` | The previous implementation trusted the browser callback for completion. | Use the server verification flow; do not grant access based only on the callback. Coordinate any required client integration with Adechris. |
+| `src/pages/shared/Messages.tsx` | Conversation/message fields are currently client-supplied, and recipient selection appears to read all users. | Use the authorized contact list and messaging operations from the backend; do not expose the whole user collection. |
+| Instructor/student course and progress pages | These depend on the current Firestore helper return shapes. | Agree the backend response shapes before changing client calls. If a response contract changes, document the exact adjustment for Adechris rather than editing frontend here. |
+
+No frontend changes should be made as part of the remaining backend tasks. Existing UI can continue to be used while backend interfaces are designed; integration changes should be handed off, not silently applied.
+
 ## Recommended authorization model
 
 1. **Identity:** every protected operation requires Firebase Auth; use `request.auth.uid` as the source of identity.
