@@ -2,7 +2,6 @@ import { useState } from "react";
 import { useAuth } from "@/contexts/AuthContext";
 import { loadPaystackScript, initializePaystack, generateReference, PAYSTACK_PUBLIC_KEY, PRICING } from "@/services/paystack";
 import { createPayment, updatePaymentStatus } from "@/lib/firestore";
-import { verifyPaystackPayment } from "@/services/payments";
 import { toast } from "sonner";
 import { Loader2, CheckCircle, CreditCard, X } from "lucide-react";
 
@@ -15,6 +14,7 @@ interface CheckoutProps {
 export default function Checkout({ paymentType, onClose, onSuccess }: CheckoutProps) {
   const { user } = useAuth();
   const [processing, setProcessing] = useState(false);
+  const [scriptLoaded, setScriptLoaded] = useState(false);
 
   const pricing = paymentType === "one_on_one" ? PRICING.ONE_ON_ONE : PRICING.MONTHLY;
 
@@ -35,6 +35,7 @@ export default function Checkout({ paymentType, onClose, onSuccess }: CheckoutPr
     try {
       // Load Paystack script
       await loadPaystackScript();
+      setScriptLoaded(true);
 
       const reference = generateReference("SF");
       const email = user.email || `${user.name.toLowerCase().replace(/\s/g, "")}@skillforge.com`;
@@ -61,29 +62,24 @@ export default function Checkout({ paymentType, onClose, onSuccess }: CheckoutPr
         publicKey: PAYSTACK_PUBLIC_KEY,
         description: pricing.description,
         callback: async (result: any) => {
-          try {
-            if (result.status === "success") {
-              // Never trust the browser callback alone. The callable verifies the
-              // reference, amount, currency and provider status with Paystack.
-              await verifyPaystackPayment(paymentId, reference);
-              toast.success("Payment verified successfully!");
+          if (result.status === "success") {
+            try {
+              // Update payment status in Firestore
+              await updatePaymentStatus(paymentId, "completed", result);
+              toast.success("Payment successful! Welcome to SkillForge!");
               onSuccess();
-            } else if (result.status === "cancelled") {
-              await updatePaymentStatus(paymentId, "cancelled");
-              toast.info("Payment cancelled");
-            } else {
-              await updatePaymentStatus(paymentId, "failed");
-              toast.error("Payment failed. Please try again.");
+            } catch (error) {
+              console.error("Error updating payment:", error);
+              toast.error("Payment succeeded but failed to update records. Please contact support.");
             }
-          } catch (error: any) {
-            console.error("Payment verification/update error:", error);
-            toast.error(
-              error?.message ||
-                "We couldn't verify the payment yet. Please contact support before trying again.",
-            );
-          } finally {
-            setProcessing(false);
+          } else if (result.status === "cancelled") {
+            await updatePaymentStatus(paymentId, "cancelled", result);
+            toast.info("Payment cancelled");
+          } else {
+            await updatePaymentStatus(paymentId, "failed", result);
+            toast.error("Payment failed. Please try again.");
           }
+          setProcessing(false);
         },
         onClose: () => {
           setProcessing(false);
@@ -149,7 +145,7 @@ export default function Checkout({ paymentType, onClose, onSuccess }: CheckoutPr
 
           <button
             onClick={handlePayment}
-            disabled={processing}
+            disabled={processing || !scriptLoaded}
             className="w-full py-3.5 rounded-xl gradient-primary text-primary-foreground font-semibold hover:opacity-90 transition-all shadow-md flex items-center justify-center gap-2 disabled:opacity-50"
           >
             {processing ? (
