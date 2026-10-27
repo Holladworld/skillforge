@@ -226,24 +226,19 @@ export const createPayment = async (paymentData: PaymentData) => {
 
 export const updatePaymentStatus = async (
     paymentId: string,
-    status: "failed" | "cancelled",
-    paystackData?: any
+    status: "failed" | "cancelled"
 ) => {
-    // A browser callback must never be allowed to mark a payment completed.
-    // Successful payments are confirmed by the verifyPaystackPayment callable.
+    // A browser callback must never mark a payment completed or persist
+    // unverified provider payloads. Success is handled by the server callable.
     if (status !== "failed" && status !== "cancelled") {
         throw new Error("Successful payments must be verified by the server.");
     }
 
     const paymentRef = doc(db, "payments", paymentId);
-    const updateData: any = {
+    await updateDoc(paymentRef, {
         status,
         updatedAt: Timestamp.now(),
-    };
-    if (paystackData) {
-        updateData.paystackData = paystackData;
-    }
-    await updateDoc(paymentRef, updateData);
+    });
 };
 
 export const getUserPayments = async (userId: string) => {
