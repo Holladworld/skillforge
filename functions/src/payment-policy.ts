@@ -24,13 +24,14 @@ export function isValidCoursePrice(value: unknown): boolean {
   if (!raw || raw.length > 100) return false;
   if (raw.toLowerCase() === "free") return true;
 
-  let normalized = raw.replace(/,/g, "").replace(/\s+/g, "");
+  let normalized = raw.replace(/\s+/g, "");
   normalized = normalized
     .replace(/^(?:NGN|USD|EUR|GBP)/i, "")
     .replace(/(?:NGN|USD|EUR|GBP)$/i, "")
     .replace(/^[₦$€£]/, "")
     .replace(/[₦$€£]$/, "");
-  return /^\d+(?:\.\d+)?$/.test(normalized) && Number.isFinite(Number(normalized));
+  if (!/^(?:\d+|\d{1,3}(?:,\d{3})+)(?:\.\d+)?$/.test(normalized)) return false;
+  return Number.isFinite(Number(normalized.replace(/,/g, "")));
 }
 
 

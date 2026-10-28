@@ -33,7 +33,7 @@ test("accepts supported non-negative course prices and rejects malformed values"
   for (const price of [0, 49.99, "Free", "0", "0.00", "$49.99", "₦10,000", "NGN 10000", "100 EUR"]) {
     assert.equal(isValidCoursePrice(price), true, String(price));
   }
-  for (const price of [-1, NaN, Infinity, "", "   ", "$-10", "abc", null, undefined]) {
+  for (const price of [-1, NaN, Infinity, "", "   ", "$-10", "1,2,3", "49.99.00", "abc", null, undefined]) {
     assert.equal(isValidCoursePrice(price), false, String(price));
   }
 });
