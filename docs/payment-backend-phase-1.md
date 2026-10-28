@@ -28,7 +28,7 @@ This callable creates the authoritative Firestore payment intent. It does not it
 
 ### `verifyPaystackPayment({ paymentId, reference })`
 
-Requires Firebase Authentication and the `PAYSTACK_SECRET_KEY` Secret Manager secret. It checks payment ownership and the server-created intent marker, then verifies the transaction through Paystack's authenticated API. It validates successful status, reference, amount, currency, and (when Paystack supplies it) customer email. A transaction updates the payment record and monthly subscription expiry atomically. Repeated successful verification is idempotent.
+Requires Firebase Authentication and the `PAYSTACK_SECRET_KEY` Secret Manager secret. It checks payment ownership and the server-created intent marker, then verifies the transaction through Paystack's authenticated API. It validates successful status, reference, amount, currency, and requires the verified Paystack customer email to match the payment intent email. A transaction updates the payment record and monthly subscription expiry atomically. Repeated successful verification is idempotent.
 
 The callable currently extends monthly subscription expiry by 30 days. A signed `paystackWebhook` endpoint now provides a second idempotent confirmation path for `charge.success`; it validates Paystack's HMAC-SHA512 signature against the exact raw body and checks the payment intent, amount, currency, reference, and customer email before fulfillment. It does not define the product-access policy for `one_on_one`.
 
