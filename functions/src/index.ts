@@ -201,7 +201,7 @@ export const verifyPaystackPayment = onCall(
 
     const providerEmail = transaction.customer?.email?.trim().toLowerCase();
     const expectedEmail = typeof payment.email === "string" ? payment.email.trim().toLowerCase() : "";
-    if (providerEmail && expectedEmail && providerEmail !== expectedEmail) {
+    if (!providerEmail || !expectedEmail || providerEmail !== expectedEmail) {
       throw new HttpsError("failed-precondition", "The payment email does not match the payment record.");
     }
 
@@ -471,12 +471,14 @@ export const createEnrollment = onCall({ region: "us-central1" }, async (request
 
   const userRef = db.collection("users").doc(uid);
   const courseRef = db.collection("courses").doc(courseId);
+  const contentRef = db.collection("course_contents").doc(courseId);
   const enrollmentRef = db.collection("enrollments").doc(`${uid}_${courseId}`);
 
   return db.runTransaction(async (transactionWriter) => {
-    const [userSnapshot, courseSnapshot, enrollmentSnapshot] = await Promise.all([
+    const [userSnapshot, courseSnapshot, contentSnapshot, enrollmentSnapshot] = await Promise.all([
       transactionWriter.get(userRef),
       transactionWriter.get(courseRef),
+      transactionWriter.get(contentRef),
       transactionWriter.get(enrollmentRef),
     ]);
 
@@ -485,6 +487,14 @@ export const createEnrollment = onCall({ region: "us-central1" }, async (request
     }
     if (!courseSnapshot.exists) {
       throw new HttpsError("not-found", "Course was not found.");
+    }
+    if (!contentSnapshot.exists ||
+        !Array.isArray(contentSnapshot.get("lessons")) ||
+        contentSnapshot.get("lessons").length < 1) {
+      throw new HttpsError(
+        "failed-precondition",
+        "Course lessons must be migrated to protected storage before enrollment.",
+      );
     }
 
     const user = userSnapshot.data()!;
