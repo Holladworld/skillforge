@@ -1,3 +1,5 @@
+import { createHmac, timingSafeEqual } from "node:crypto";
+
 export const EXPECTED_AMOUNTS_KOBO = {
   one_on_one: 10_000_000,
   monthly: 1_000_000,
@@ -29,4 +31,19 @@ export function isValidCoursePrice(value: unknown): boolean {
     .replace(/^[₦$€£]/, "")
     .replace(/[₦$€£]$/, "");
   return /^\d+(?:\.\d+)?$/.test(normalized) && Number.isFinite(Number(normalized));
+}
+
+
+/** Validates Paystack's HMAC-SHA512 webhook signature against the exact raw body. */
+export function isValidPaystackSignature(
+  rawBody: Uint8Array,
+  signature: unknown,
+  secret: string,
+): boolean {
+  if (typeof signature !== "string" || !/^[a-f0-9]{128}$/i.test(signature) || !secret) {
+    return false;
+  }
+  const expected = createHmac("sha512", secret).update(rawBody).digest();
+  const supplied = Buffer.from(signature, "hex");
+  return supplied.length === expected.length && timingSafeEqual(supplied, expected);
 }

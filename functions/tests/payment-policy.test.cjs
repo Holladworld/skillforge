@@ -1,8 +1,10 @@
+const { createHmac } = require("node:crypto");
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const {
   EXPECTED_AMOUNTS_KOBO,
   isPaymentType,
+  isValidPaystackSignature,
 } = require("../lib/payment-policy.js");
 
 test("keeps the approved payment prices in kobo", () => {
@@ -34,4 +36,16 @@ test("accepts supported non-negative course prices and rejects malformed values"
   for (const price of [-1, NaN, Infinity, "", "   ", "$-10", "abc", null, undefined]) {
     assert.equal(isValidCoursePrice(price), false, String(price));
   }
+});
+
+
+test("validates Paystack webhook signatures against the exact raw body", () => {
+  const secret = "test-secret";
+  const body = Buffer.from('{"event":"charge.success","data":{"reference":"abc"}}');
+  const signature = createHmac("sha512", secret).update(body).digest("hex");
+  assert.equal(isValidPaystackSignature(body, signature, secret), true);
+  assert.equal(isValidPaystackSignature(body, signature.toUpperCase(), secret), true);
+  assert.equal(isValidPaystackSignature(Buffer.from(body.toString() + " "), signature, secret), false);
+  assert.equal(isValidPaystackSignature(body, "invalid", secret), false);
+  assert.equal(isValidPaystackSignature(body, signature, ""), false);
 });

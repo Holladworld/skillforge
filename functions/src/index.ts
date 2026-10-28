@@ -2,8 +2,8 @@ import { randomUUID } from "node:crypto";
 import { initializeApp } from "firebase-admin/app";
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
-import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { EXPECTED_AMOUNTS_KOBO, isPaymentType, isValidCoursePrice } from "./payment-policy.js";
+import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
+import { EXPECTED_AMOUNTS_KOBO, isPaymentType, isValidCoursePrice, isValidPaystackSignature } from "./payment-policy.js";
 import { hasActiveSubscription, isFreeCoursePrice, normalizeLearningProgress, normalizeCourseLessons } from "./learning-policy.js";
 
 initializeApp();
@@ -670,3 +670,151 @@ export const getLearningProgress = onCall({ region: "us-central1" }, async (requ
     lessonCount: progress.lessonCount,
   };
 });
+
+
+interface PaystackWebhookEvent {
+  event?: string;
+  data?: {
+    status?: string;
+    reference?: string;
+    amount?: number;
+    currency?: string;
+    id?: number;
+    channel?: string;
+    customer?: { email?: string };
+  };
+}
+
+/**
+ * Processes Paystack charge.success webhooks as a second, idempotent payment
+ * confirmation path. Only signed raw request bodies are trusted.
+ */
+export const paystackWebhook = onRequest(
+  { region: "us-central1", secrets: [paystackSecretKey] },
+  async (request, response) => {
+    if (request.method !== "POST") {
+      response.set("Allow", "POST").status(405).send("Method not allowed");
+      return;
+    }
+
+    const rawBody = request.rawBody;
+    const signature = request.get("x-paystack-signature");
+    if (!rawBody || !isValidPaystackSignature(rawBody, signature, paystackSecretKey.value())) {
+      response.status(401).json({ received: false });
+      return;
+    }
+
+    let event: PaystackWebhookEvent;
+    try {
+      event = JSON.parse(rawBody.toString("utf8")) as PaystackWebhookEvent;
+    } catch {
+      response.status(400).json({ received: false });
+      return;
+    }
+
+    if (event.event !== "charge.success") {
+      response.status(200).json({ received: true, processed: false });
+      return;
+    }
+
+    const providerTransaction = event.data;
+    const reference = providerTransaction?.reference;
+    if (
+      !providerTransaction ||
+      typeof reference !== "string" ||
+      providerTransaction.status !== "success" ||
+      typeof providerTransaction.amount !== "number" ||
+      providerTransaction.currency !== "NGN"
+    ) {
+      response.status(200).json({ received: true, processed: false });
+      return;
+    }
+
+    const paymentQuery = await db.collection("payments")
+      .where("reference", "==", reference)
+      .limit(1)
+      .get();
+    if (paymentQuery.empty) {
+      response.status(200).json({ received: true, processed: false });
+      return;
+    }
+
+    const paymentRef = paymentQuery.docs[0].ref;
+    const initialPayment = paymentQuery.docs[0].data();
+    if (
+      !isPaymentType(initialPayment.paymentType) ||
+      initialPayment.amount !== EXPECTED_AMOUNTS_KOBO[initialPayment.paymentType] ||
+      providerTransaction.amount !== EXPECTED_AMOUNTS_KOBO[initialPayment.paymentType] ||
+      initialPayment.currency !== "NGN" ||
+      initialPayment.intentVersion !== 1 ||
+      initialPayment.intentProvider !== "paystack"
+    ) {
+      response.status(200).json({ received: true, processed: false });
+      return;
+    }
+
+    const providerEmail = providerTransaction.customer?.email?.trim().toLowerCase();
+    const expectedEmail = typeof initialPayment.email === "string"
+      ? initialPayment.email.trim().toLowerCase()
+      : "";
+    if (!providerEmail || !expectedEmail || providerEmail !== expectedEmail) {
+      response.status(200).json({ received: true, processed: false });
+      return;
+    }
+
+    const userRef = db.collection("users").doc(initialPayment.userId);
+    const outcome = await db.runTransaction(async (transactionWriter) => {
+      const [latestSnapshot, userSnapshot] = await Promise.all([
+        transactionWriter.get(paymentRef),
+        transactionWriter.get(userRef),
+      ]);
+      if (!latestSnapshot.exists || !userSnapshot.exists) return "ignored";
+
+      const latest = latestSnapshot.data()!;
+      if (latest.status === "completed" && latest.verifiedAt) return "already-completed";
+      if (
+        latest.status !== "pending" ||
+        latest.userId !== initialPayment.userId ||
+        latest.reference !== reference ||
+        latest.paymentType !== initialPayment.paymentType ||
+        latest.amount !== EXPECTED_AMOUNTS_KOBO[initialPayment.paymentType] ||
+        latest.currency !== "NGN" ||
+        latest.intentVersion !== 1 ||
+        latest.intentProvider !== "paystack"
+      ) {
+        return "ignored";
+      }
+
+      transactionWriter.update(paymentRef, {
+        status: "completed",
+        verifiedAt: FieldValue.serverTimestamp(),
+        updatedAt: FieldValue.serverTimestamp(),
+        verificationProvider: "paystack_webhook",
+        paystackTransactionId: providerTransaction.id ?? null,
+        paystackChannel: providerTransaction.channel ?? null,
+      });
+
+      if (latest.paymentType === "monthly") {
+        const currentExpiry = userSnapshot.get("subscriptionExpiresAt");
+        const existingExpiryMs = currentExpiry instanceof Timestamp ? currentExpiry.toMillis() : 0;
+        const nextExpiry = Timestamp.fromMillis(
+          Math.max(Date.now(), existingExpiryMs) + 30 * 24 * 60 * 60 * 1000,
+        );
+        transactionWriter.update(userRef, {
+          subscriptionStatus: "active",
+          subscriptionPlan: "monthly",
+          subscriptionExpiresAt: nextExpiry,
+          subscriptionUpdatedAt: FieldValue.serverTimestamp(),
+        });
+      }
+
+      return "processed";
+    });
+
+    response.status(200).json({
+      received: true,
+      processed: outcome === "processed",
+      alreadyCompleted: outcome === "already-completed",
+    });
+  },
+);
