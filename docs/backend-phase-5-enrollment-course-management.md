@@ -51,3 +51,12 @@ The course metadata update and protected lesson update happen in one Firestore t
 - Firestore rules emulator tests remain pending because the local Java runtime is unavailable.
 - Candidate `firestore.rules` remains undeployed. Confirm the currently published rules and complete compatibility checks before deploying rules or functions.
 - No deployment, live data migration, or frontend modification was performed.
+
+
+## Code-review follow-up
+
+The shared lesson validator now serves both course creation and editing. It rejects duplicate/invalid lesson IDs, malformed field types, oversized lesson content/descriptions, unsupported video URLs, and combined lesson payloads above 700 KB (to leave margin below Firestore's 1 MiB document limit). Course metadata now rejects malformed, negative, and non-finite prices while accepting the price formats used by the current editor.
+
+Enrollment now refuses to create a record until non-empty protected lesson content exists, preventing an enrollment from succeeding for a course that the learning-content callable cannot yet serve. Paystack verification also requires the verified transaction email to match the payment intent email.
+
+New unit tests cover lesson normalization, duplicate IDs, invalid/oversized content, aggregate payload size, and course-price validation. **These newly added tests have not yet been run in the user's local environment.** Firestore callable integration tests and emulator rules tests remain outstanding.
