@@ -199,7 +199,9 @@ export const verifyPaystackPayment = onCall(
       );
     }
 
-    const providerEmail = transaction.customer?.email?.trim().toLowerCase();
+    const providerEmail = typeof transaction.customer?.email === "string"
+      ? transaction.customer.email.trim().toLowerCase()
+      : "";
     const expectedEmail = typeof payment.email === "string" ? payment.email.trim().toLowerCase() : "";
     if (!providerEmail || !expectedEmail || providerEmail !== expectedEmail) {
       throw new HttpsError("failed-precondition", "The payment email does not match the payment record.");
@@ -753,11 +755,19 @@ export const paystackWebhook = onRequest(
       return;
     }
 
-    const providerEmail = providerTransaction.customer?.email?.trim().toLowerCase();
+    const providerEmail = typeof providerTransaction.customer?.email === "string"
+      ? providerTransaction.customer.email.trim().toLowerCase()
+      : "";
     const expectedEmail = typeof initialPayment.email === "string"
       ? initialPayment.email.trim().toLowerCase()
       : "";
-    if (!providerEmail || !expectedEmail || providerEmail !== expectedEmail) {
+    if (
+      typeof initialPayment.userId !== "string" ||
+      !initialPayment.userId ||
+      !providerEmail ||
+      !expectedEmail ||
+      providerEmail !== expectedEmail
+    ) {
       response.status(200).json({ received: true, processed: false });
       return;
     }
@@ -777,6 +787,7 @@ export const paystackWebhook = onRequest(
         latest.userId !== initialPayment.userId ||
         latest.reference !== reference ||
         latest.paymentType !== initialPayment.paymentType ||
+        latest.email !== initialPayment.email ||
         latest.amount !== EXPECTED_AMOUNTS_KOBO[initialPayment.paymentType] ||
         latest.currency !== "NGN" ||
         latest.intentVersion !== 1 ||
