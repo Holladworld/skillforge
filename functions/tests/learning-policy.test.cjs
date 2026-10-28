@@ -115,8 +115,8 @@ test("rejects duplicate or malformed course lesson fields instead of silently dr
 test("rejects course lesson payloads that exceed the safe Firestore document budget", () => {
   const { normalizeCourseLessons } = require("../lib/learning-policy.js");
   const oversized = Array.from({ length: 15 }, (_, i) => ({
-    id: \`lesson_\${i}\`,
-    title: \`Lesson \${i}\`,
+    id: `lesson_${i}`,
+    title: `Lesson ${i}`,
     content: "x".repeat(49000),
   }));
   assert.throws(() => normalizeCourseLessons(oversized), /700 KB maximum/);
