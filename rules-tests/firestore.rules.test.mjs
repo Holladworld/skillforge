@@ -27,8 +27,12 @@ beforeEach(async () => {
     });
     await setDoc(doc(db, "courses", "courseA"), {
       title: "Course A", description: "Test course", price: "0", category: "Testing",
-      lessons: [], instructorId: "instructorA", instructorName: "Instructor A",
+      instructorId: "instructorA", instructorName: "Instructor A",
       students: 0, rating: 0, thumbnail: "", createdAt: new Date(), updatedAt: new Date()
+    });
+    await setDoc(doc(db, "course_contents", "courseA"), {
+      courseId: "courseA", instructorId: "instructorA",
+      lessons: [{ id: "lesson_1", title: "Private lesson", type: "video", videoUrl: "https://example.com/private.mp4" }]
     });
     await setDoc(doc(db, "enrollments", "studentA_courseA"), {
       studentId: "studentA", courseId: "courseA", instructorId: "instructorA", progress: 0
@@ -79,14 +83,23 @@ test("only an instructor can create a course for their own UID", async () => {
   const instructorDb = testEnv.authenticatedContext("instructorA", { email: "instructorA@example.com" }).firestore();
   await assertSucceeds(setDoc(doc(instructorDb, "courses", "newCourse"), {
     title: "New Course", description: "Description", price: "0", category: "Testing",
-    lessons: [], instructorId: "instructorA", instructorName: "Instructor A",
+    instructorId: "instructorA", instructorName: "Instructor A",
     students: 0, rating: 0, thumbnail: "", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
   }));
   const studentDb = testEnv.authenticatedContext("studentA", { email: "studentA@example.com" }).firestore();
   await assertFails(setDoc(doc(studentDb, "courses", "badCourse"), {
     title: "Bad Course", description: "Description", price: "0", category: "Testing",
-    lessons: [], instructorId: "studentA", instructorName: "Student A",
+    instructorId: "studentA", instructorName: "Student A",
     students: 0, rating: 0, thumbnail: "", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
+  }));
+});
+
+test("protected lesson payloads cannot be read or modified directly by browser clients", async () => {
+  const db = testEnv.authenticatedContext("studentA", { email: "studentA@example.com" }).firestore();
+  await assertSucceeds(getDoc(doc(db, "courses", "courseA")));
+  await assertFails(getDoc(doc(db, "course_contents", "courseA")));
+  await assertFails(setDoc(doc(db, "course_contents", "forged"), {
+    courseId: "forged", lessons: [{ title: "Injected lesson" }]
   }));
 });
 
