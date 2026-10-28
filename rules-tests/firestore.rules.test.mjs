@@ -61,7 +61,8 @@ test("a new client can create a student profile but cannot self-assign instructo
   await assertSucceeds(setDoc(doc(db, "users", "newStudent"), {
     name: "New Student", email: "new@example.com", role: "student", createdAt: "2026-10-28"
   }));
-  await assertFails(setDoc(doc(db, "users", "newInstructor"), {
+  const instructorDb = testEnv.authenticatedContext("newInstructor", { email: "new@example.com" }).firestore();
+  await assertFails(setDoc(doc(instructorDb, "users", "newInstructor"), {
     name: "New Instructor", email: "new@example.com", role: "instructor", createdAt: "2026-10-28"
   }));
 });
