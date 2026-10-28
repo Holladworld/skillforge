@@ -133,7 +133,7 @@ export function normalizeLessonVideoUrl(value: unknown): NormalizedLessonMedia |
     const videoUploadIndex = segments.findIndex((segment, index) =>
       segment === "video" && segments[index + 1] === "upload"
     );
-    if (segments.length < 5 || videoUploadIndex < 0) {
+    if (segments.length < 5 || segments[0] !== "drj7eidzs" || videoUploadIndex < 0) {
       throw new Error("Use a Cloudinary HTTPS video delivery URL.");
     }
     return { provider: "cloudinary", videoUrl: url.toString() };
