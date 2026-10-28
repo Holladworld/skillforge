@@ -329,6 +329,24 @@ async function readCourseAndUser(
 
 
 
+async function requireApprovedInstructor(uid: string) {
+  const [userSnapshot, accessSnapshot] = await Promise.all([
+    db.collection("users").doc(uid).get(),
+    db.collection("instructor_access").doc(uid).get(),
+  ]);
+  if (
+    !userSnapshot.exists ||
+    userSnapshot.get("role") !== "instructor" ||
+    !(userSnapshot.get("instructorApprovedAt") instanceof Timestamp) ||
+    !accessSnapshot.exists ||
+    accessSnapshot.get("approved") !== true ||
+    !(accessSnapshot.get("approvedAt") instanceof Timestamp)
+  ) {
+    throw new HttpsError("permission-denied", "Only trusted, approved instructors can manage courses.");
+  }
+  return userSnapshot;
+}
+
 function validateCourseMetadata(
   title: string,
   description: string,
@@ -367,10 +385,7 @@ export const createCourseWithProtectedContent = onCall({ region: "us-central1" }
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in before publishing a course.");
 
-  const userSnapshot = await db.collection("users").doc(uid).get();
-  if (!userSnapshot.exists || userSnapshot.get("role") !== "instructor" || !(userSnapshot.get("instructorApprovedAt") instanceof Timestamp)) {
-    throw new HttpsError("permission-denied", "Only approved instructors can publish courses.");
-  }
+  const userSnapshot = await requireApprovedInstructor(uid);
 
   const data = request.data ?? {};
   const title = typeof data.title === "string" ? data.title.trim() : "";
@@ -420,10 +435,7 @@ export const updateCourseWithProtectedContent = onCall({ region: "us-central1" }
   if (!uid) throw new HttpsError("unauthenticated", "Sign in before editing a course.");
 
   const courseId = parseCourseId(request.data?.courseId);
-  const userSnapshot = await db.collection("users").doc(uid).get();
-  if (!userSnapshot.exists || userSnapshot.get("role") !== "instructor" || !(userSnapshot.get("instructorApprovedAt") instanceof Timestamp)) {
-    throw new HttpsError("permission-denied", "Only approved instructors can edit courses.");
-  }
+  const userSnapshot = await requireApprovedInstructor(uid);
 
   const data = request.data ?? {};
   const title = typeof data.title === "string" ? data.title.trim() : "";

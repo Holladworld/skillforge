@@ -17,7 +17,10 @@ service cloud.firestore {
       return signedIn()
         && userExists(request.auth.uid)
         && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'instructor'
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.instructorApprovedAt is timestamp;
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.instructorApprovedAt is timestamp
+        && exists(/databases/$(database)/documents/instructor_access/$(request.auth.uid))
+        && get(/databases/$(database)/documents/instructor_access/$(request.auth.uid)).data.approved == true
+        && get(/databases/$(database)/documents/instructor_access/$(request.auth.uid)).data.approvedAt is timestamp;
     }
 
     function isCourseOwner(courseId) {
@@ -172,6 +175,11 @@ service cloud.firestore {
           && request.resource.data.createdAt is timestamp;
         allow update, delete: if false;
       }
+    }
+
+    // Instructor approval records are written only by trusted Admin SDK tooling.
+    match /instructor_access/{userId} {
+      allow read, write: if false;
     }
 
     // Cohorts, cohort memberships, broadcasts, and other not-yet-reviewed

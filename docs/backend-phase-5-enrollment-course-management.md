@@ -63,7 +63,7 @@ New unit tests cover lesson normalization, duplicate IDs, invalid/oversized cont
 
 ## Trusted instructor provisioning
 
-The current candidate rules allow users to create student profiles only; instructor status must be granted through a trusted administrative path. A guarded script is available at `functions/scripts/provision-instructor.mjs`. It requires an existing profile, a verified Firebase Auth email, and a matching profile email. Both course-management callables require the server-written `instructorApprovedAt` timestamp in addition to the profile role, so changing only the role field is insufficient. It defaults to dry-run; writes require both `--apply` and an exact `--confirm-project-id` match.
+The current candidate rules allow users to create student profiles only; instructor status must be granted through a trusted administrative path. A guarded script is available at `functions/scripts/provision-instructor.mjs`. It requires an existing profile, a verified Firebase Auth email, and a matching profile email. Both course-management callables require the server-written `instructorApprovedAt` timestamp and a separate `instructor_access/{uid}` approval record, so changing profile fields alone is insufficient. The candidate rules deny browser access to that collection. It defaults to dry-run; writes require both `--apply` and an exact `--confirm-project-id` match. It writes the profile marker and the separate server-only approval record atomically.
 
 Example dry run:
 

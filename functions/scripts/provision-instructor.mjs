@@ -33,13 +33,15 @@ if (!authUser.email || !authUser.emailVerified) {
 }
 
 const userRef = db.collection("users").doc(uid);
-const userSnapshot = await userRef.get();
+const accessRef = db.collection("instructor_access").doc(uid);
+const [userSnapshot, accessSnapshot] = await Promise.all([userRef.get(), accessRef.get()]);
 if (!userSnapshot.exists) {
   console.error("Refusing to provision: the user Firestore profile does not exist.");
   process.exit(2);
 }
 
 const profile = userSnapshot.data();
+const access = accessSnapshot.exists ? accessSnapshot.data() : undefined;
 if (typeof profile.email !== "string" || profile.email.trim().toLowerCase() !== authUser.email.trim().toLowerCase()) {
   console.error("Refusing to provision: the profile email does not match Firebase Authentication.");
   process.exit(2);
@@ -55,15 +57,29 @@ console.log("Verified email: " + authUser.email);
 console.log("Current role: " + profile.role);
 console.log("Mode: " + (apply ? "APPLY" : "DRY RUN (no writes)"));
 
-if (profile.role === "instructor" && profile.instructorApprovedAt instanceof Timestamp) {
+const alreadyApproved =
+  profile.role === "instructor" &&
+  profile.instructorApprovedAt instanceof Timestamp &&
+  access?.approved === true &&
+  access.approvedAt instanceof Timestamp;
+
+if (alreadyApproved) {
   console.log("No change needed: this profile is already approved as an instructor.");
 } else if (!apply) {
-  console.log("Would set role to instructor and record instructorApprovedAt.");
+  console.log("Would set role to instructor, record instructorApprovedAt, and create the trusted instructor_access approval record.");
 } else {
-  await userRef.update({
+  const batch = db.batch();
+  batch.update(userRef, {
     role: "instructor",
     instructorApprovedAt: FieldValue.serverTimestamp(),
     updatedAt: FieldValue.serverTimestamp(),
   });
-  console.log("Instructor role provisioned. No frontend or deployment changes were made.");
+  batch.set(accessRef, {
+    approved: true,
+    approvedAt: FieldValue.serverTimestamp(),
+    approvedEmail: authUser.email,
+    updatedAt: FieldValue.serverTimestamp(),
+  });
+  await batch.commit();
+  console.log("Instructor role provisioned with a trusted approval record. No frontend or deployment changes were made.");
 }
