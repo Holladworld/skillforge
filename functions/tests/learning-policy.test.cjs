@@ -4,6 +4,7 @@ const {
   isFreeCoursePrice,
   hasActiveSubscription,
   normalizeLearningProgress,
+  normalizeLessonVideoUrl,
 } = require("../lib/learning-policy.js");
 
 test("recognizes only explicit zero-price courses as free", () => {
@@ -37,4 +38,43 @@ test("rejects out-of-range and malformed lesson indexes", () => {
   assert.throws(() => normalizeLearningProgress(0, [4], 4), /completed lesson index/);
   assert.throws(() => normalizeLearningProgress(0, "0", 4), /valid list/);
   assert.throws(() => normalizeLearningProgress(0, [], 0), /lesson count/);
+});
+
+test("normalizes supported YouTube lesson URLs to privacy-enhanced embeds", () => {
+  for (const url of [
+    "https://www.youtube.com/watch?v=abcdefghijk",
+    "https://youtu.be/abcdefghijk?t=30",
+    "https://youtube.com/shorts/abcdefghijk",
+    "https://www.youtube-nocookie.com/embed/abcdefghijk",
+  ]) {
+    assert.deepEqual(normalizeLessonVideoUrl(url), {
+      provider: "youtube",
+      videoId: "abcdefghijk",
+      videoUrl: "https://www.youtube-nocookie.com/embed/abcdefghijk",
+    });
+  }
+});
+
+test("accepts HTTPS Cloudinary video delivery URLs", () => {
+  assert.deepEqual(
+    normalizeLessonVideoUrl("https://res.cloudinary.com/drj7eidzs/video/upload/v123/videos/lesson.mp4"),
+    {
+      provider: "cloudinary",
+      videoUrl: "https://res.cloudinary.com/drj7eidzs/video/upload/v123/videos/lesson.mp4",
+    },
+  );
+  assert.equal(normalizeLessonVideoUrl(""), null);
+});
+
+test("rejects unsupported or malformed lesson video URLs", () => {
+  for (const url of [
+    "javascript:alert(1)",
+    "http://youtu.be/abcdefghijk",
+    "https://youtube.com/watch?v=invalid",
+    "https://youtube.com.evil.example/watch?v=abcdefghijk",
+    "https://example.com/video.mp4",
+    "https://res.cloudinary.com/example/image/upload/picture.jpg",
+  ]) {
+    assert.throws(() => normalizeLessonVideoUrl(url));
+  }
 });
