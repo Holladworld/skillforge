@@ -436,7 +436,7 @@ export const saveLearningProgress = onCall({ region: "us-central1" }, async (req
     if (!getCourseAccessType(course, user)) {
       throw new HttpsError(
         "permission-denied",
-        "An active, unexpired monthly subscription is required to save progress for this course.",
+        "You must have access to this course to save learning progress.",
       );
     }
 
