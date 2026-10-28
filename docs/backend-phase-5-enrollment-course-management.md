@@ -60,3 +60,16 @@ The shared lesson validator now serves both course creation and editing. It reje
 Enrollment now refuses to create a record until non-empty protected lesson content exists, preventing an enrollment from succeeding for a course that the learning-content callable cannot yet serve. Paystack verification also requires the verified transaction email to match the payment intent email.
 
 New unit tests cover lesson normalization, duplicate IDs, invalid/oversized content, aggregate payload size, and course-price validation. **These newly added tests have not yet been run in the user's local environment.** Firestore callable integration tests and emulator rules tests remain outstanding.
+
+## Trusted instructor provisioning
+
+The current candidate rules allow users to create student profiles only; instructor status must be granted through a trusted administrative path. A guarded script is available at `functions/scripts/provision-instructor.mjs`. It requires an existing profile, a verified Firebase Auth email, and a matching profile email. It defaults to dry-run; writes require both `--apply` and an exact `--confirm-project-id` match.
+
+Example dry run:
+
+```sh
+cd functions
+npm run provision:instructor -- --project=PROJECT_ID --uid=FIREBASE_UID
+```
+
+Only after reviewing the output should an authorized operator run the same command with `--apply --confirm-project-id=PROJECT_ID`. This script has not been run against any project. Do not provision instructors or deploy the rules/functions until the target project and current published rules are confirmed.
