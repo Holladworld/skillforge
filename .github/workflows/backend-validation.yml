@@ -1,0 +1,65 @@
+name: Backend validation
+
+on:
+  push:
+    branches:
+      - feat/skillforge-development
+  pull_request:
+    branches:
+      - feat/skillforge-development
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  backend-unit-tests:
+    name: Functions build and unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: functions/package-lock.json
+
+      - name: Install Functions dependencies
+        run: npm ci
+        working-directory: functions
+
+      - name: Build and run Functions unit tests
+        run: npm test
+        working-directory: functions
+
+  firestore-rules-tests:
+    name: Firestore rules emulator tests
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: package-lock.json
+
+      - name: Set up Java for Firebase Emulator
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install root dependencies
+        run: npm ci
+
+      - name: Install Firebase CLI
+        run: npm install --global firebase-tools@15.34.1
+
+      - name: Run Firestore rules tests against the local emulator
+        run: npm run test:rules
