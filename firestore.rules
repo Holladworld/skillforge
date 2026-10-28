@@ -21,7 +21,7 @@ service cloud.firestore {
     }
 
     function isCourseOwner(courseId) {
-      return signedIn()
+      return isInstructor()
         && exists(/databases/$(database)/documents/courses/$(courseId))
         && get(/databases/$(database)/documents/courses/$(courseId)).data.instructorId == request.auth.uid;
     }
