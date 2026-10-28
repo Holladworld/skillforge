@@ -9,3 +9,24 @@ export function isPaymentType(value: unknown): value is PaymentType {
   return typeof value === "string" &&
     Object.prototype.hasOwnProperty.call(EXPECTED_AMOUNTS_KOBO, value);
 }
+
+
+/**
+ * Accepts the price formats used by the course editor while rejecting empty,
+ * negative, non-finite, and malformed prices.
+ */
+export function isValidCoursePrice(value: unknown): boolean {
+  if (typeof value === "number") return Number.isFinite(value) && value >= 0;
+  if (typeof value !== "string") return false;
+  const raw = value.trim();
+  if (!raw || raw.length > 100) return false;
+  if (raw.toLowerCase() === "free") return true;
+
+  let normalized = raw.replace(/,/g, "").replace(/\s+/g, "");
+  normalized = normalized
+    .replace(/^(?:NGN|USD|EUR|GBP)/i, "")
+    .replace(/(?:NGN|USD|EUR|GBP)$/i, "")
+    .replace(/^[₦$€£]/, "")
+    .replace(/[₦$€£]$/, "");
+  return /^\\d+(?:\\.\\d+)?$/.test(normalized) && Number.isFinite(Number(normalized));
+}

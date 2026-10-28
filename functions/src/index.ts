@@ -3,7 +3,7 @@ import { initializeApp } from "firebase-admin/app";
 import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
-import { EXPECTED_AMOUNTS_KOBO, isPaymentType } from "./payment-policy.js";
+import { EXPECTED_AMOUNTS_KOBO, isPaymentType, isValidCoursePrice } from "./payment-policy.js";
 import { hasActiveSubscription, isFreeCoursePrice, normalizeLearningProgress, normalizeCourseLessons } from "./learning-policy.js";
 
 initializeApp();
@@ -326,6 +326,28 @@ async function readCourseAndUser(
 }
 
 
+
+function validateCourseMetadata(
+  title: string,
+  description: string,
+  category: string,
+  price: unknown,
+  thumbnail: string,
+): void {
+  if (!title || title.length > 180) {
+    throw new HttpsError("invalid-argument", "Course title must contain 1–180 characters.");
+  }
+  if (description.length > 12000 || !category || category.length > 120) {
+    throw new HttpsError("invalid-argument", "Course description or category is invalid.");
+  }
+  if (!isValidCoursePrice(price)) {
+    throw new HttpsError("invalid-argument", "Course price must be a valid non-negative amount or Free.");
+  }
+  if (thumbnail.length > 2048) {
+    throw new HttpsError("invalid-argument", "Course thumbnail URL is too long.");
+  }
+}
+
 function parseCourseLessons(value: unknown) {
   try {
     return normalizeCourseLessons(value);
@@ -354,6 +376,7 @@ export const createCourseWithProtectedContent = onCall({ region: "us-central1" }
   const category = typeof data.category === "string" ? data.category.trim() : "";
   const price = typeof data.price === "string" || typeof data.price === "number" ? data.price : null;
   const thumbnail = typeof data.thumbnail === "string" ? data.thumbnail.trim() : "";
+  validateCourseMetadata(title, description, category, price, thumbnail);
   const lessons = parseCourseLessons(data.lessons);
 
   const courseRef = db.collection("courses").doc();
@@ -406,6 +429,7 @@ export const updateCourseWithProtectedContent = onCall({ region: "us-central1" }
   const category = typeof data.category === "string" ? data.category.trim() : "";
   const price = typeof data.price === "string" || typeof data.price === "number" ? data.price : null;
   const thumbnail = typeof data.thumbnail === "string" ? data.thumbnail.trim() : "";
+  validateCourseMetadata(title, description, category, price, thumbnail);
   const lessons = parseCourseLessons(data.lessons);
 
   const courseRef = db.collection("courses").doc(courseId);
