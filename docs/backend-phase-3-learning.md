@@ -17,7 +17,7 @@ It also records `accessType` and `updatedAt`. Client-supplied user IDs, instruct
 
 ### `getCourseLearningContent({ courseId })`
 
-Requires authentication and verifies that the course is free or the caller has an active, unexpired monthly subscription before returning course details and lesson data. A completed `one_on_one` payment does not grant course access.
+Requires authentication and verifies that the course is free or the caller has an active, unexpired monthly subscription. It returns catalogue metadata from `courses/{courseId}` and lesson data from the separate `course_contents/{courseId}` document. A completed `one_on_one` payment does not grant course access. It fails closed if the protected content document is missing or malformed.
 
 ### `saveLearningProgress({ courseId, currentLessonIndex, completedLessonIndexes })`
 
@@ -30,8 +30,10 @@ Returns only the authenticated user's progress record for the requested course.
 ## Important rollout and security limitations
 
 - These functions use the Admin SDK, so Firestore rules do not authorize their internal reads/writes. Callable authentication and explicit checks are required.
-- The current frontend still reads `courses/{courseId}` directly and embeds lesson data/video URLs in the course document. The current candidate rules allow signed-in reads of course documents. Therefore **the new access callable does not yet secure the existing direct-read path**.
-- Before claiming lesson protection, Adechris must route learning-page reads/progress through these callables, and the data/rules design must prevent direct reads of protected lesson payloads. Public Cloudinary video URLs also need a separate access-control strategy; a callable cannot make an already-public URL private.
+- The candidate rules now treat `courses/{courseId}` as catalogue metadata and deny browser reads/writes to `course_contents/{courseId}`. The new `createCourseWithProtectedContent` callable writes catalogue metadata and lessons separately. These candidate rules are not deployed.
+- Existing course documents may still have embedded `lessons`. The guarded migration script `functions/scripts/migrate-course-content.mjs` supports dry-run by default and only writes when both `--apply` and an exactly matching `--confirm-project-id` are supplied. Run a dry-run and inspect the target project before applying any migration. Existing `course_contents` documents are never overwritten; conflicts cause a non-zero exit and require manual reconciliation.
+- Adechris must route course publishing and learning-page reads through `createCourseWithProtectedContent` and `getCourseLearningContent`; the current browser-side `createCourse` and direct `getDoc(courses/{id})` learning path are not compatible with the intended protected-content rules.
+- Public Cloudinary video URLs still need a separate access-control strategy. Separating lesson documents prevents direct Firestore reads, but it does not make already-public video URLs private.
 - The existing frontend enrollment helper must call `createEnrollment({ courseId })`; it must stop writing the enrollment document directly. This is a handoff only; frontend files have not been changed.
 - The Firestore rules candidate has not been emulator-tested because Java is not installed, and it has not been deployed. Do not deploy it until the emulator tests pass and the live published rules are confirmed.
 - No Firebase deployment or live data migration was performed.
