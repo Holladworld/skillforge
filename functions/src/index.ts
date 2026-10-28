@@ -4,7 +4,7 @@ import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { EXPECTED_AMOUNTS_KOBO, isPaymentType } from "./payment-policy.js";
-import { hasActiveSubscription, isFreeCoursePrice, normalizeLearningProgress, normalizeLessonVideoUrl } from "./learning-policy.js";
+import { hasActiveSubscription, isFreeCoursePrice, normalizeLearningProgress, normalizeCourseLessons } from "./learning-policy.js";
 
 initializeApp();
 
@@ -325,6 +325,16 @@ async function readCourseAndUser(
   return { course, user, accessType };
 }
 
+
+function parseCourseLessons(value: unknown) {
+  try {
+    return normalizeCourseLessons(value);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : "Course lessons are invalid.";
+    throw new HttpsError("invalid-argument", message);
+  }
+}
+
 /**
  * Creates a course with public catalogue metadata separated from protected lessons.
  * This callable is the intended replacement for browser-side createCourse().
@@ -344,64 +354,7 @@ export const createCourseWithProtectedContent = onCall({ region: "us-central1" }
   const category = typeof data.category === "string" ? data.category.trim() : "";
   const price = typeof data.price === "string" || typeof data.price === "number" ? data.price : null;
   const thumbnail = typeof data.thumbnail === "string" ? data.thumbnail.trim() : "";
-  const lessonsInput = data.lessons;
-
-  if (!title || title.length > 180) {
-    throw new HttpsError("invalid-argument", "Course title must contain 1–180 characters.");
-  }
-  if (description.length > 12000 || !category || category.length > 120) {
-    throw new HttpsError("invalid-argument", "Course description or category is invalid.");
-  }
-  if (price === null || (typeof price === "string" && price.length > 100)) {
-    throw new HttpsError("invalid-argument", "A valid course price is required.");
-  }
-  if (thumbnail.length > 2048) {
-    throw new HttpsError("invalid-argument", "Course thumbnail URL is too long.");
-  }
-  if (!Array.isArray(lessonsInput) || lessonsInput.length < 1 || lessonsInput.length > 500) {
-    throw new HttpsError("invalid-argument", "A course must contain between 1 and 500 lessons.");
-  }
-
-  const lessons = lessonsInput.map((lesson: unknown, index: number) => {
-    if (!lesson || typeof lesson !== "object" || Array.isArray(lesson)) {
-      throw new HttpsError("invalid-argument", `Lesson ${index + 1} is invalid.`);
-    }
-    const item = lesson as Record<string, unknown>;
-    const lessonTitle = typeof item.title === "string" ? item.title.trim() : "";
-    const type = typeof item.type === "string" ? item.type : "video";
-    const videoUrl = typeof item.videoUrl === "string" ? item.videoUrl.trim() : "";
-    const duration = typeof item.duration === "string" ? item.duration : "";
-    if (!lessonTitle || lessonTitle.length > 180 || type.length > 40 || videoUrl.length > 2048 || duration.length > 100) {
-      throw new HttpsError("invalid-argument", `Lesson ${index + 1} has invalid fields.`);
-    }
-    let media: ReturnType<typeof normalizeLessonVideoUrl> = null;
-    if (videoUrl) {
-      try {
-        media = normalizeLessonVideoUrl(videoUrl);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Lesson video URL is invalid.";
-        throw new HttpsError("invalid-argument", `Lesson ${index + 1}: ${message}`);
-      }
-      if (!media) {
-        throw new HttpsError("invalid-argument", `Lesson ${index + 1}: video URL is empty.`);
-      }
-    }
-
-    const normalized: Record<string, string> = {
-      id: typeof item.id === "string" && item.id.length <= 150 ? item.id : `lesson_${index + 1}`,
-      title: lessonTitle,
-      type,
-    };
-    if (media) {
-      normalized.mediaProvider = media.provider;
-      normalized.videoUrl = media.videoUrl;
-      if (media.videoId) normalized.youtubeVideoId = media.videoId;
-    }
-    if (duration) normalized.duration = duration;
-    if (typeof item.content === "string" && item.content.length <= 50000) normalized.content = item.content;
-    if (typeof item.description === "string" && item.description.length <= 12000) normalized.description = item.description;
-    return normalized;
-  });
+  const lessons = parseCourseLessons(data.lessons);
 
   const courseRef = db.collection("courses").doc();
   const contentRef = db.collection("course_contents").doc(courseRef.id);
@@ -453,64 +406,7 @@ export const updateCourseWithProtectedContent = onCall({ region: "us-central1" }
   const category = typeof data.category === "string" ? data.category.trim() : "";
   const price = typeof data.price === "string" || typeof data.price === "number" ? data.price : null;
   const thumbnail = typeof data.thumbnail === "string" ? data.thumbnail.trim() : "";
-  const lessonsInput = data.lessons;
-
-  if (!title || title.length > 180) {
-    throw new HttpsError("invalid-argument", "Course title must contain 1–180 characters.");
-  }
-  if (description.length > 12000 || !category || category.length > 120) {
-    throw new HttpsError("invalid-argument", "Course description or category is invalid.");
-  }
-  if (price === null || (typeof price === "string" && price.length > 100)) {
-    throw new HttpsError("invalid-argument", "A valid course price is required.");
-  }
-  if (thumbnail.length > 2048) {
-    throw new HttpsError("invalid-argument", "Course thumbnail URL is too long.");
-  }
-  if (!Array.isArray(lessonsInput) || lessonsInput.length < 1 || lessonsInput.length > 500) {
-    throw new HttpsError("invalid-argument", "A course must contain between 1 and 500 lessons.");
-  }
-
-  const seenLessonIds = new Set<string>();
-  const lessons = lessonsInput.map((lesson: unknown, index: number) => {
-    if (!lesson || typeof lesson !== "object" || Array.isArray(lesson)) {
-      throw new HttpsError("invalid-argument", `Lesson ${index + 1} is invalid.`);
-    }
-    const item = lesson as Record<string, unknown>;
-    const lessonTitle = typeof item.title === "string" ? item.title.trim() : "";
-    const type = typeof item.type === "string" ? item.type : "video";
-    const videoUrl = typeof item.videoUrl === "string" ? item.videoUrl.trim() : "";
-    const duration = typeof item.duration === "string" ? item.duration : "";
-    const lessonId = typeof item.id === "string" ? item.id.trim() : `lesson_${index + 1}`;
-    if (!lessonTitle || lessonTitle.length > 180 || type.length > 40 ||
-        videoUrl.length > 2048 || duration.length > 100 || !lessonId ||
-        lessonId.length > 150 || seenLessonIds.has(lessonId)) {
-      throw new HttpsError("invalid-argument", `Lesson ${index + 1} has invalid or duplicate fields.`);
-    }
-    seenLessonIds.add(lessonId);
-
-    let media: ReturnType<typeof normalizeLessonVideoUrl> = null;
-    if (videoUrl) {
-      try {
-        media = normalizeLessonVideoUrl(videoUrl);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : "Lesson video URL is invalid.";
-        throw new HttpsError("invalid-argument", `Lesson ${index + 1}: ${message}`);
-      }
-      if (!media) throw new HttpsError("invalid-argument", `Lesson ${index + 1}: video URL is empty.`);
-    }
-
-    const normalized: Record<string, string> = { id: lessonId, title: lessonTitle, type };
-    if (media) {
-      normalized.mediaProvider = media.provider;
-      normalized.videoUrl = media.videoUrl;
-      if (media.videoId) normalized.youtubeVideoId = media.videoId;
-    }
-    if (duration) normalized.duration = duration;
-    if (typeof item.content === "string" && item.content.length <= 50000) normalized.content = item.content;
-    if (typeof item.description === "string" && item.description.length <= 12000) normalized.description = item.description;
-    return normalized;
-  });
+  const lessons = parseCourseLessons(data.lessons);
 
   const courseRef = db.collection("courses").doc(courseId);
   const contentRef = db.collection("course_contents").doc(courseId);

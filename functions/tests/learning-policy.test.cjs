@@ -79,3 +79,45 @@ test("rejects unsupported or malformed lesson video URLs", () => {
     assert.throws(() => normalizeLessonVideoUrl(url));
   }
 });
+
+
+test("normalizes course lessons and generates stable default IDs", () => {
+  const { normalizeCourseLessons } = require("../lib/learning-policy.js");
+  assert.deepEqual(normalizeCourseLessons([
+    { title: "  Welcome  ", videoUrl: "https://youtu.be/abcdefghijk" },
+    { id: "lesson-2", title: "Reading", type: "text", content: "Hello" },
+  ]), [
+    {
+      id: "lesson_1",
+      title: "Welcome",
+      type: "video",
+      mediaProvider: "youtube",
+      videoUrl: "https://www.youtube-nocookie.com/embed/abcdefghijk",
+      youtubeVideoId: "abcdefghijk",
+    },
+    { id: "lesson-2", title: "Reading", type: "text", content: "Hello" },
+  ]);
+});
+
+test("rejects duplicate or malformed course lesson fields instead of silently dropping them", () => {
+  const { normalizeCourseLessons } = require("../lib/learning-policy.js");
+  assert.throws(() => normalizeCourseLessons([
+    { id: "same", title: "First" },
+    { id: "same", title: "Second" },
+  ]), /duplicated/);
+  assert.throws(() => normalizeCourseLessons([{ title: "Too much content", content: "x".repeat(50001) }]), /content/);
+  assert.throws(() => normalizeCourseLessons([{ title: "Too much description", description: "x".repeat(12001) }]), /description/);
+  assert.throws(() => normalizeCourseLessons([{ title: "Wrong type", content: 123 }]), /content/);
+  assert.throws(() => normalizeCourseLessons([{ title: "Wrong ID", id: 12 }]), /ID/);
+  assert.throws(() => normalizeCourseLessons([]), /between 1 and 500/);
+});
+
+test("rejects course lesson payloads that exceed the safe Firestore document budget", () => {
+  const { normalizeCourseLessons } = require("../lib/learning-policy.js");
+  const oversized = Array.from({ length: 15 }, (_, i) => ({
+    id: \`lesson_\${i}\`,
+    title: \`Lesson \${i}\`,
+    content: "x".repeat(49000),
+  }));
+  assert.throws(() => normalizeCourseLessons(oversized), /700 KB maximum/);
+});

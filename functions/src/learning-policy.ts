@@ -141,3 +141,102 @@ export function normalizeLessonVideoUrl(value: unknown): NormalizedLessonMedia |
 
   throw new Error("Lesson videos must use a supported YouTube or Cloudinary URL.");
 }
+
+
+export interface NormalizedCourseLesson {
+  id: string;
+  title: string;
+  type: string;
+  mediaProvider?: LessonMediaProvider;
+  videoUrl?: string;
+  youtubeVideoId?: string;
+  duration?: string;
+  content?: string;
+  description?: string;
+}
+
+/**
+ * Validates and normalizes lesson data before it is stored in one Firestore
+ * document. The aggregate byte limit leaves room below Firestore's 1 MiB
+ * document-size ceiling for course-content metadata and serialization overhead.
+ */
+export function normalizeCourseLessons(value: unknown): NormalizedCourseLesson[] {
+  if (!Array.isArray(value) || value.length < 1 || value.length > 500) {
+    throw new Error("A course must contain between 1 and 500 lessons.");
+  }
+
+  const seenIds = new Set<string>();
+  const lessons = value.map((lesson: unknown, index: number): NormalizedCourseLesson => {
+    if (!lesson || typeof lesson !== "object" || Array.isArray(lesson)) {
+      throw new Error(\`Lesson \${index + 1} is invalid.\`);
+    }
+    const item = lesson as Record<string, unknown>;
+    const title = typeof item.title === "string" ? item.title.trim() : "";
+    const type = item.type === undefined ? "video" : item.type;
+    const id = item.id === undefined ? \`lesson_\${index + 1}\` : item.id;
+    const videoUrl = item.videoUrl === undefined ? "" : item.videoUrl;
+    const duration = item.duration === undefined ? "" : item.duration;
+
+    if (!title || title.length > 180) {
+      throw new Error(\`Lesson \${index + 1} title must contain 1–180 characters.\`);
+    }
+    if (typeof type !== "string" || !type.trim() || type.length > 40) {
+      throw new Error(\`Lesson \${index + 1} type is invalid.\`);
+    }
+    if (typeof id !== "string" || !id.trim() || id.trim().length > 150) {
+      throw new Error(\`Lesson \${index + 1} ID is invalid.\`);
+    }
+    const normalizedId = id.trim();
+    if (seenIds.has(normalizedId)) {
+      throw new Error(\`Lesson ID "\${normalizedId}" is duplicated.\`);
+    }
+    seenIds.add(normalizedId);
+
+    if (typeof videoUrl !== "string" || videoUrl.trim().length > 2048) {
+      throw new Error(\`Lesson \${index + 1} video URL is invalid or too long.\`);
+    }
+    if (typeof duration !== "string" || duration.length > 100) {
+      throw new Error(\`Lesson \${index + 1} duration is invalid or too long.\`);
+    }
+    if (item.content !== undefined &&
+        (typeof item.content !== "string" || item.content.length > 50000)) {
+      throw new Error(\`Lesson \${index + 1} content must be text of at most 50000 characters.\`);
+    }
+    if (item.description !== undefined &&
+        (typeof item.description !== "string" || item.description.length > 12000)) {
+      throw new Error(\`Lesson \${index + 1} description must be text of at most 12000 characters.\`);
+    }
+
+    const normalized: NormalizedCourseLesson = {
+      id: normalizedId,
+      title,
+      type: type.trim(),
+    };
+    const cleanVideoUrl = videoUrl.trim();
+    if (cleanVideoUrl) {
+      let media: NormalizedLessonMedia;
+      try {
+        const parsed = normalizeLessonVideoUrl(cleanVideoUrl);
+        if (!parsed) throw new Error("Video URL is empty.");
+        media = parsed;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Video URL is invalid.";
+        throw new Error(\`Lesson \${index + 1}: \${message}\`);
+      }
+      normalized.mediaProvider = media.provider;
+      normalized.videoUrl = media.videoUrl;
+      if (media.videoId) normalized.youtubeVideoId = media.videoId;
+    }
+    if (duration) normalized.duration = duration;
+    if (typeof item.content === "string") normalized.content = item.content;
+    if (typeof item.description === "string") normalized.description = item.description;
+    return normalized;
+  });
+
+  const serializedBytes = new TextEncoder().encode(JSON.stringify(lessons)).length;
+  if (serializedBytes > 700_000) {
+    throw new Error("Lesson content is too large to store safely in one course document (700 KB maximum).");
+  }
+
+  return lessons;
+}
