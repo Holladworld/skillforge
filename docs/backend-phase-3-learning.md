@@ -63,7 +63,7 @@ The script uses Application Default Credentials. It does not deploy rules/functi
 The backend accepts both of these source types for lesson video URLs:
 
 - **YouTube:** standard watch links, `youtu.be` share links, Shorts, live links, and supported embed links. The stored lesson has `mediaProvider: "youtube"`, `youtubeVideoId`, and a normalized privacy-enhanced embed URL.
-- **Cloudinary:** HTTPS URLs from `res.cloudinary.com` that use the video upload/delivery path. The stored lesson has `mediaProvider: "cloudinary"` and the validated delivery URL.
+- **Cloudinary:** HTTPS URLs from the existing SkillForge Cloudinary cloud (`drj7eidzs`) that use the video upload/delivery path. URLs from other Cloudinary cloud names are rejected. The stored lesson has `mediaProvider: "cloudinary"` and the validated delivery URL.
 
 The backend rejects unsupported hosts, non-HTTPS URLs, malformed YouTube IDs, and Cloudinary image/non-video paths. A blank video URL remains allowed for non-video/text lesson types.
 
