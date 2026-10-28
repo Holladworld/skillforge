@@ -46,7 +46,7 @@ The course metadata update and protected lesson update happen in one Firestore t
 
 ## Verification and rollout status
 
-- This commit has not been built or tested in the user's local environment. After pulling, run `cd functions && npm test`.
+- The user ran `cd functions && npm test` against the latest backend changes on 2026-10-28: TypeScript build succeeded and all 15 unit tests passed. This covers the current pure-policy tests, not callable integration or live Firebase behavior.
 - Callable integration tests against Firestore are still needed for unauthenticated calls, non-instructor callers, non-owner edits, missing content, duplicate lesson IDs, invalid video URLs, and successful atomic metadata/content updates.
 - Firestore rules emulator tests remain pending because the local Java runtime is unavailable.
 - Candidate `firestore.rules` remains undeployed. Confirm the currently published rules and complete compatibility checks before deploying rules or functions.
