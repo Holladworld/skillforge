@@ -28,5 +28,5 @@ export function isValidCoursePrice(value: unknown): boolean {
     .replace(/(?:NGN|USD|EUR|GBP)$/i, "")
     .replace(/^[₦$€£]/, "")
     .replace(/[₦$€£]$/, "");
-  return /^\\d+(?:\\.\\d+)?$/.test(normalized) && Number.isFinite(Number(normalized));
+  return /^\d+(?:\.\d+)?$/.test(normalized) && Number.isFinite(Number(normalized));
 }
