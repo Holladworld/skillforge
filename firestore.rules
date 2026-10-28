@@ -68,20 +68,19 @@ service cloud.firestore {
       allow delete: if false;
     }
 
-    // Course documents remain readable to signed-in users to preserve the
-    // existing catalogue flow. Writes are owner- and role-checked. Lesson
-    // media protection requires a separate content-delivery change in Phase 3.
+    // Course documents contain catalogue metadata only. Lesson payloads live
+    // in course_contents and are returned through the access-checked callable.
     match /courses/{courseId} {
       allow read: if signedIn();
 
       allow create: if isInstructor()
         && request.resource.data.keys().hasOnly([
-          'title', 'description', 'price', 'category', 'lessons',
+          'title', 'description', 'price', 'category',
           'instructorId', 'instructorName', 'students', 'rating',
           'thumbnail', 'createdAt', 'updatedAt'
         ])
         && request.resource.data.keys().hasAll([
-          'title', 'description', 'price', 'category', 'lessons',
+          'title', 'description', 'price', 'category',
           'instructorId', 'instructorName', 'students', 'rating',
           'thumbnail', 'createdAt', 'updatedAt'
         ])
@@ -92,8 +91,6 @@ service cloud.firestore {
         && request.resource.data.description is string
         && request.resource.data.description.size() <= 12000
         && request.resource.data.category is string
-        && request.resource.data.lessons is list
-        && request.resource.data.lessons.size() <= 500
         && request.resource.data.students == 0
         && request.resource.data.rating == 0
         && request.resource.data.createdAt is timestamp
@@ -102,10 +99,16 @@ service cloud.firestore {
       allow update: if isCourseOwner(courseId)
         && request.resource.data.instructorId == resource.data.instructorId
         && request.resource.data.diff(resource.data).affectedKeys()
-          .hasOnly(['title', 'description', 'price', 'category', 'lessons', 'thumbnail', 'updatedAt'])
+          .hasOnly(['title', 'description', 'price', 'category', 'thumbnail', 'updatedAt'])
         && request.resource.data.updatedAt is timestamp;
 
       allow delete: if isCourseOwner(courseId);
+    }
+
+    // Protected lesson documents must never be read or modified by browser clients.
+    // Cloud Functions use the Admin SDK after checking the caller's access.
+    match /course_contents/{courseId} {
+      allow read, write: if false;
     }
 
     // Enrollment writes are server-only until the trusted enrollment callable
