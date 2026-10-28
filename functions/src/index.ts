@@ -434,6 +434,113 @@ export const createCourseWithProtectedContent = onCall({ region: "us-central1" }
 });
 
 /**
+ * Updates an instructor-owned course and its protected lesson payload atomically.
+ * This replaces browser-side edits to courses/{courseId}.lessons.
+ */
+export const updateCourseWithProtectedContent = onCall({ region: "us-central1" }, async (request) => {
+  const uid = request.auth?.uid;
+  if (!uid) throw new HttpsError("unauthenticated", "Sign in before editing a course.");
+
+  const courseId = parseCourseId(request.data?.courseId);
+  const userSnapshot = await db.collection("users").doc(uid).get();
+  if (!userSnapshot.exists || userSnapshot.get("role") !== "instructor") {
+    throw new HttpsError("permission-denied", "Only approved instructors can edit courses.");
+  }
+
+  const data = request.data ?? {};
+  const title = typeof data.title === "string" ? data.title.trim() : "";
+  const description = typeof data.description === "string" ? data.description.trim() : "";
+  const category = typeof data.category === "string" ? data.category.trim() : "";
+  const price = typeof data.price === "string" || typeof data.price === "number" ? data.price : null;
+  const thumbnail = typeof data.thumbnail === "string" ? data.thumbnail.trim() : "";
+  const lessonsInput = data.lessons;
+
+  if (!title || title.length > 180) {
+    throw new HttpsError("invalid-argument", "Course title must contain 1–180 characters.");
+  }
+  if (description.length > 12000 || !category || category.length > 120) {
+    throw new HttpsError("invalid-argument", "Course description or category is invalid.");
+  }
+  if (price === null || (typeof price === "string" && price.length > 100)) {
+    throw new HttpsError("invalid-argument", "A valid course price is required.");
+  }
+  if (thumbnail.length > 2048) {
+    throw new HttpsError("invalid-argument", "Course thumbnail URL is too long.");
+  }
+  if (!Array.isArray(lessonsInput) || lessonsInput.length < 1 || lessonsInput.length > 500) {
+    throw new HttpsError("invalid-argument", "A course must contain between 1 and 500 lessons.");
+  }
+
+  const seenLessonIds = new Set<string>();
+  const lessons = lessonsInput.map((lesson: unknown, index: number) => {
+    if (!lesson || typeof lesson !== "object" || Array.isArray(lesson)) {
+      throw new HttpsError("invalid-argument", `Lesson ${index + 1} is invalid.`);
+    }
+    const item = lesson as Record<string, unknown>;
+    const lessonTitle = typeof item.title === "string" ? item.title.trim() : "";
+    const type = typeof item.type === "string" ? item.type : "video";
+    const videoUrl = typeof item.videoUrl === "string" ? item.videoUrl.trim() : "";
+    const duration = typeof item.duration === "string" ? item.duration : "";
+    const lessonId = typeof item.id === "string" ? item.id.trim() : `lesson_${index + 1}`;
+    if (!lessonTitle || lessonTitle.length > 180 || type.length > 40 ||
+        videoUrl.length > 2048 || duration.length > 100 || !lessonId ||
+        lessonId.length > 150 || seenLessonIds.has(lessonId)) {
+      throw new HttpsError("invalid-argument", `Lesson ${index + 1} has invalid or duplicate fields.`);
+    }
+    seenLessonIds.add(lessonId);
+
+    let media: ReturnType<typeof normalizeLessonVideoUrl> = null;
+    if (videoUrl) {
+      try {
+        media = normalizeLessonVideoUrl(videoUrl);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Lesson video URL is invalid.";
+        throw new HttpsError("invalid-argument", `Lesson ${index + 1}: ${message}`);
+      }
+      if (!media) throw new HttpsError("invalid-argument", `Lesson ${index + 1}: video URL is empty.`);
+    }
+
+    const normalized: Record<string, string> = { id: lessonId, title: lessonTitle, type };
+    if (media) {
+      normalized.mediaProvider = media.provider;
+      normalized.videoUrl = media.videoUrl;
+      if (media.videoId) normalized.youtubeVideoId = media.videoId;
+    }
+    if (duration) normalized.duration = duration;
+    if (typeof item.content === "string" && item.content.length <= 50000) normalized.content = item.content;
+    if (typeof item.description === "string" && item.description.length <= 12000) normalized.description = item.description;
+    return normalized;
+  });
+
+  const courseRef = db.collection("courses").doc(courseId);
+  const contentRef = db.collection("course_contents").doc(courseId);
+  const now = FieldValue.serverTimestamp();
+
+  await db.runTransaction(async (transactionWriter) => {
+    const [courseSnapshot, contentSnapshot] = await Promise.all([
+      transactionWriter.get(courseRef),
+      transactionWriter.get(contentRef),
+    ]);
+    if (!courseSnapshot.exists) throw new HttpsError("not-found", "Course was not found.");
+    if (courseSnapshot.get("instructorId") !== uid) {
+      throw new HttpsError("permission-denied", "You can only edit your own courses.");
+    }
+    if (!contentSnapshot.exists || !Array.isArray(contentSnapshot.get("lessons"))) {
+      throw new HttpsError("failed-precondition", "Course lessons must be migrated before they can be edited safely.");
+    }
+
+    transactionWriter.update(courseRef, {
+      title, description, price, category, thumbnail, updatedAt: now,
+    });
+    transactionWriter.update(contentRef, {
+      lessons, updatedAt: now,
+    });
+  });
+
+  return { success: true, courseId, lessonCount: lessons.length };
+});
+
+/**
  * Creates an enrollment from trusted Firestore data. The student UID and all
  * course metadata are derived on the server; repeated calls are idempotent.
  */
