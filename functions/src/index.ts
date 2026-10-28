@@ -755,10 +755,11 @@ export const paystackWebhook = onRequest(
 
     const paymentRef = paymentQuery.docs[0].ref;
     const initialPayment = paymentQuery.docs[0].data();
+    const paymentType = initialPayment.paymentType;
     if (
-      !isPaymentType(initialPayment.paymentType) ||
-      initialPayment.amount !== EXPECTED_AMOUNTS_KOBO[initialPayment.paymentType] ||
-      providerTransaction.amount !== EXPECTED_AMOUNTS_KOBO[initialPayment.paymentType] ||
+      !isPaymentType(paymentType) ||
+      initialPayment.amount !== EXPECTED_AMOUNTS_KOBO[paymentType] ||
+      providerTransaction.amount !== EXPECTED_AMOUNTS_KOBO[paymentType] ||
       initialPayment.currency !== "NGN" ||
       initialPayment.intentVersion !== 1 ||
       initialPayment.intentProvider !== "paystack"
@@ -798,9 +799,9 @@ export const paystackWebhook = onRequest(
         latest.status !== "pending" ||
         latest.userId !== initialPayment.userId ||
         latest.reference !== reference ||
-        latest.paymentType !== initialPayment.paymentType ||
+        latest.paymentType !== paymentType ||
         latest.email !== initialPayment.email ||
-        latest.amount !== EXPECTED_AMOUNTS_KOBO[initialPayment.paymentType] ||
+        latest.amount !== EXPECTED_AMOUNTS_KOBO[paymentType] ||
         latest.currency !== "NGN" ||
         latest.intentVersion !== 1 ||
         latest.intentProvider !== "paystack"
@@ -817,7 +818,7 @@ export const paystackWebhook = onRequest(
         paystackChannel: providerTransaction.channel ?? null,
       });
 
-      if (latest.paymentType === "monthly") {
+      if (paymentType === "monthly") {
         const currentExpiry = userSnapshot.get("subscriptionExpiresAt");
         const existingExpiryMs = currentExpiry instanceof Timestamp ? currentExpiry.toMillis() : 0;
         const nextExpiry = Timestamp.fromMillis(
