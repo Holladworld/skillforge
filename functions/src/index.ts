@@ -415,12 +415,14 @@ export const saveLearningProgress = onCall({ region: "us-central1" }, async (req
   const userRef = db.collection("users").doc(uid);
   const courseRef = db.collection("courses").doc(courseId);
   const progressRef = db.collection("learning_progress").doc(`${uid}_${courseId}`);
+  const enrollmentRef = db.collection("enrollments").doc(`${uid}_${courseId}`);
 
   return db.runTransaction(async (transactionWriter) => {
-    const [userSnapshot, courseSnapshot, progressSnapshot] = await Promise.all([
+    const [userSnapshot, courseSnapshot, progressSnapshot, enrollmentSnapshot] = await Promise.all([
       transactionWriter.get(userRef),
       transactionWriter.get(courseRef),
       transactionWriter.get(progressRef),
+      transactionWriter.get(enrollmentRef),
     ]);
 
     if (!userSnapshot.exists) {
@@ -466,8 +468,6 @@ export const saveLearningProgress = onCall({ region: "us-central1" }, async (req
     });
 
     // Keep the existing enrollment summary in sync when an enrollment exists.
-    const enrollmentRef = db.collection("enrollments").doc(`${uid}_${courseId}`);
-    const enrollmentSnapshot = await transactionWriter.get(enrollmentRef);
     if (enrollmentSnapshot.exists) {
       transactionWriter.update(enrollmentRef, {
         progress: normalized.progressPercent,
