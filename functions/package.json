@@ -8,7 +8,8 @@
   "scripts": {
     "build": "tsc",
     "build:watch": "tsc --watch",
-    "test": "npm run build && node --test tests/*.test.cjs"
+    "test": "npm run build && node --test tests/*.test.cjs",
+    "migrate:course-content": "node scripts/migrate-course-content.mjs"
   },
   "dependencies": {
     "firebase-admin": "^13.4.0",
