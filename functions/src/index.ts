@@ -4,7 +4,7 @@ import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 import { defineSecret } from "firebase-functions/params";
 import { HttpsError, onCall } from "firebase-functions/v2/https";
 import { EXPECTED_AMOUNTS_KOBO, isPaymentType } from "./payment-policy.js";
-import { hasActiveSubscription, isFreeCoursePrice, normalizeLearningProgress } from "./learning-policy.js";
+import { hasActiveSubscription, isFreeCoursePrice, normalizeLearningProgress, normalizeLessonVideoUrl } from "./learning-policy.js";
 
 initializeApp();
 
@@ -374,12 +374,29 @@ export const createCourseWithProtectedContent = onCall({ region: "us-central1" }
     if (!lessonTitle || lessonTitle.length > 180 || type.length > 40 || videoUrl.length > 2048 || duration.length > 100) {
       throw new HttpsError("invalid-argument", `Lesson ${index + 1} has invalid fields.`);
     }
+    let media: ReturnType<typeof normalizeLessonVideoUrl> = null;
+    if (videoUrl) {
+      try {
+        media = normalizeLessonVideoUrl(videoUrl);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : "Lesson video URL is invalid.";
+        throw new HttpsError("invalid-argument", `Lesson ${index + 1}: ${message}`);
+      }
+      if (!media) {
+        throw new HttpsError("invalid-argument", `Lesson ${index + 1}: video URL is empty.`);
+      }
+    }
+
     const normalized: Record<string, string> = {
       id: typeof item.id === "string" && item.id.length <= 150 ? item.id : `lesson_${index + 1}`,
       title: lessonTitle,
       type,
     };
-    if (videoUrl) normalized.videoUrl = videoUrl;
+    if (media) {
+      normalized.mediaProvider = media.provider;
+      normalized.videoUrl = media.videoUrl;
+      if (media.videoId) normalized.youtubeVideoId = media.videoId;
+    }
     if (duration) normalized.duration = duration;
     if (typeof item.content === "string" && item.content.length <= 50000) normalized.content = item.content;
     if (typeof item.description === "string" && item.description.length <= 12000) normalized.description = item.description;
