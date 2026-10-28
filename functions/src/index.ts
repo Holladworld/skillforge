@@ -393,6 +393,15 @@ export const getCourseLearningContent = onCall({ region: "us-central1" }, async 
   if (!uid) throw new HttpsError("unauthenticated", "Sign in to access course lessons.");
   const courseId = parseCourseId(request.data?.courseId);
   const { course, accessType } = await readCourseAndUser(uid, courseId);
+  const contentSnapshot = await db.collection("course_contents").doc(courseId).get();
+
+  if (!contentSnapshot.exists) {
+    throw new HttpsError("failed-precondition", "Course lessons have not been migrated to protected storage yet.");
+  }
+  const lessons = contentSnapshot.get("lessons");
+  if (!Array.isArray(lessons)) {
+    throw new HttpsError("failed-precondition", "Course lesson content is invalid.");
+  }
 
   return {
     courseId,
@@ -402,7 +411,7 @@ export const getCourseLearningContent = onCall({ region: "us-central1" }, async 
     thumbnail: typeof course.thumbnail === "string" ? course.thumbnail : "",
     instructorId: typeof course.instructorId === "string" ? course.instructorId : "",
     instructorName: typeof course.instructorName === "string" ? course.instructorName : "",
-    lessons: Array.isArray(course.lessons) ? course.lessons : [],
+    lessons,
     accessType,
   };
 });
@@ -418,9 +427,11 @@ export const saveLearningProgress = onCall({ region: "us-central1" }, async (req
   const enrollmentRef = db.collection("enrollments").doc(`${uid}_${courseId}`);
 
   return db.runTransaction(async (transactionWriter) => {
-    const [userSnapshot, courseSnapshot, progressSnapshot, enrollmentSnapshot] = await Promise.all([
+    const contentRef = db.collection("course_contents").doc(courseId);
+    const [userSnapshot, courseSnapshot, contentSnapshot, progressSnapshot, enrollmentSnapshot] = await Promise.all([
       transactionWriter.get(userRef),
       transactionWriter.get(courseRef),
+      transactionWriter.get(contentRef),
       transactionWriter.get(progressRef),
       transactionWriter.get(enrollmentRef),
     ]);
@@ -440,7 +451,10 @@ export const saveLearningProgress = onCall({ region: "us-central1" }, async (req
       );
     }
 
-    const lessons = Array.isArray(course.lessons) ? course.lessons : [];
+    if (!contentSnapshot.exists || !Array.isArray(contentSnapshot.get("lessons"))) {
+      throw new HttpsError("failed-precondition", "Course lessons have not been migrated to protected storage yet.");
+    }
+    const lessons = contentSnapshot.get("lessons") as unknown[];
     let normalized;
     try {
       normalized = normalizeLearningProgress(
@@ -484,7 +498,12 @@ export const getLearningProgress = onCall({ region: "us-central1" }, async (requ
   const uid = request.auth?.uid;
   if (!uid) throw new HttpsError("unauthenticated", "Sign in to read learning progress.");
   const courseId = parseCourseId(request.data?.courseId);
-  const { course } = await readCourseAndUser(uid, courseId);
+  await readCourseAndUser(uid, courseId);
+  const contentSnapshot = await db.collection("course_contents").doc(courseId).get();
+  if (!contentSnapshot.exists || !Array.isArray(contentSnapshot.get("lessons"))) {
+    throw new HttpsError("failed-precondition", "Course lessons have not been migrated to protected storage yet.");
+  }
+  const lessonCount = (contentSnapshot.get("lessons") as unknown[]).length;
   const progressSnapshot = await db.collection("learning_progress").doc(`${uid}_${courseId}`).get();
 
   if (!progressSnapshot.exists) {
@@ -493,7 +512,7 @@ export const getLearningProgress = onCall({ region: "us-central1" }, async (requ
       currentLessonIndex: 0,
       completedLessonIndexes: [],
       progressPercent: 0,
-      lessonCount: Array.isArray(course.lessons) ? course.lessons.length : 0,
+      lessonCount,
     };
   }
 
