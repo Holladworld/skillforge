@@ -16,7 +16,8 @@ service cloud.firestore {
     function isInstructor() {
       return signedIn()
         && userExists(request.auth.uid)
-        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'instructor';
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'instructor'
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.instructorApprovedAt is timestamp;
     }
 
     function isCourseOwner(courseId) {

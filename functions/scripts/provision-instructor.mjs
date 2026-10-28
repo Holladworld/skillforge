@@ -1,6 +1,6 @@
 import { applicationDefault, initializeApp } from "firebase-admin/app";
 import { getAuth } from "firebase-admin/auth";
-import { FieldValue, getFirestore } from "firebase-admin/firestore";
+import { FieldValue, Timestamp, getFirestore } from "firebase-admin/firestore";
 
 function arg(name) {
   const prefix = "--" + name + "=";
@@ -55,8 +55,8 @@ console.log("Verified email: " + authUser.email);
 console.log("Current role: " + profile.role);
 console.log("Mode: " + (apply ? "APPLY" : "DRY RUN (no writes)"));
 
-if (profile.role === "instructor") {
-  console.log("No change needed: this profile is already an instructor.");
+if (profile.role === "instructor" && profile.instructorApprovedAt instanceof Timestamp) {
+  console.log("No change needed: this profile is already approved as an instructor.");
 } else if (!apply) {
   console.log("Would set role to instructor and record instructorApprovedAt.");
 } else {

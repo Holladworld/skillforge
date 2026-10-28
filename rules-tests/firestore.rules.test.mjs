@@ -23,7 +23,8 @@ beforeEach(async () => {
       name: "Student B", email: "studentB@example.com", role: "student", createdAt: "2026-01-01"
     });
     await setDoc(doc(db, "users", "instructorA"), {
-      name: "Instructor A", email: "instructorA@example.com", role: "instructor", createdAt: "2026-01-01"
+      name: "Instructor A", email: "instructorA@example.com", role: "instructor",
+      instructorApprovedAt: new Date(), createdAt: "2026-01-01"
     });
     await setDoc(doc(db, "courses", "courseA"), {
       title: "Course A", description: "Test course", price: "0", category: "Testing",
@@ -155,5 +156,19 @@ test("message sender must match the authenticated user and only members can send
   const outsiderDb = testEnv.authenticatedContext("instructorA", { email: "instructorA@example.com" }).firestore();
   await assertFails(addDoc(collection(outsiderDb, "conversations", "conversationA", "messages"), {
     senderId: "instructorA", senderName: "Instructor A", text: "Intrusion", createdAt: serverTimestamp()
+  }));
+});
+
+test("a profile role alone does not grant instructor privileges without trusted approval", async () => {
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    await setDoc(doc(context.firestore(), "users", "unapprovedInstructor"), {
+      name: "Unapproved", email: "unapproved@example.com", role: "instructor", createdAt: "2026-10-28"
+    });
+  });
+  const db = testEnv.authenticatedContext("unapprovedInstructor", { email: "unapproved@example.com" }).firestore();
+  await assertFails(setDoc(doc(db, "courses", "unapprovedCourse"), {
+    title: "Unapproved Course", description: "Description", price: "0", category: "Testing",
+    instructorId: "unapprovedInstructor", instructorName: "Unapproved",
+    students: 0, rating: 0, thumbnail: "", createdAt: serverTimestamp(), updatedAt: serverTimestamp()
   }));
 });

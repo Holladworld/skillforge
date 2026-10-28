@@ -368,7 +368,7 @@ export const createCourseWithProtectedContent = onCall({ region: "us-central1" }
   if (!uid) throw new HttpsError("unauthenticated", "Sign in before publishing a course.");
 
   const userSnapshot = await db.collection("users").doc(uid).get();
-  if (!userSnapshot.exists || userSnapshot.get("role") !== "instructor") {
+  if (!userSnapshot.exists || userSnapshot.get("role") !== "instructor" || !(userSnapshot.get("instructorApprovedAt") instanceof Timestamp)) {
     throw new HttpsError("permission-denied", "Only approved instructors can publish courses.");
   }
 
@@ -421,7 +421,7 @@ export const updateCourseWithProtectedContent = onCall({ region: "us-central1" }
 
   const courseId = parseCourseId(request.data?.courseId);
   const userSnapshot = await db.collection("users").doc(uid).get();
-  if (!userSnapshot.exists || userSnapshot.get("role") !== "instructor") {
+  if (!userSnapshot.exists || userSnapshot.get("role") !== "instructor" || !(userSnapshot.get("instructorApprovedAt") instanceof Timestamp)) {
     throw new HttpsError("permission-denied", "Only approved instructors can edit courses.");
   }
 

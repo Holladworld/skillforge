@@ -26,7 +26,7 @@ Input:
 }
 ```
 
-The caller must be authenticated, have `users/{uid}.role == "instructor"`, and own the target course. The callable validates the course ID, metadata lengths, lesson count, lesson fields, unique lesson IDs, and supported video URL formats. It does not accept a replacement instructor ID, student count, rating, or creation timestamp.
+The caller must be authenticated, have `users/{uid}.role == "instructor"`, have a server-provisioned `instructorApprovedAt` timestamp, and own the target course. The callable validates the course ID, metadata lengths, lesson count, lesson fields, unique lesson IDs, and supported video URL formats. It does not accept a replacement instructor ID, student count, rating, or creation timestamp.
 
 The course metadata update and protected lesson update happen in one Firestore transaction. The callable refuses to edit if `course_contents/{courseId}` is missing or malformed; this avoids accidentally recreating content from a legacy document before the migration is reviewed. It returns `{ success, courseId, lessonCount }`.
 
@@ -63,7 +63,7 @@ New unit tests cover lesson normalization, duplicate IDs, invalid/oversized cont
 
 ## Trusted instructor provisioning
 
-The current candidate rules allow users to create student profiles only; instructor status must be granted through a trusted administrative path. A guarded script is available at `functions/scripts/provision-instructor.mjs`. It requires an existing profile, a verified Firebase Auth email, and a matching profile email. It defaults to dry-run; writes require both `--apply` and an exact `--confirm-project-id` match.
+The current candidate rules allow users to create student profiles only; instructor status must be granted through a trusted administrative path. A guarded script is available at `functions/scripts/provision-instructor.mjs`. It requires an existing profile, a verified Firebase Auth email, and a matching profile email. Both course-management callables require the server-written `instructorApprovedAt` timestamp in addition to the profile role, so changing only the role field is insufficient. It defaults to dry-run; writes require both `--apply` and an exact `--confirm-project-id` match.
 
 Example dry run:
 
