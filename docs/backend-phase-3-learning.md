@@ -4,6 +4,10 @@ Branch: `feat/skillforge-development`
 
 ## Implemented callable contracts
 
+### `createCourseWithProtectedContent({ title, description, price, category, thumbnail, lessons })`
+
+Requires Firebase Authentication and a server-side `users/{uid}.role == "instructor"` profile. It writes only catalogue metadata to `courses/{courseId}` and stores lesson payloads in the server-only `course_contents/{courseId}` document. It does not trust a client-supplied instructor UID or instructor name. Adechris must replace the existing browser-side `createCourse()` call with this callable before the stricter rules can be deployed.
+
 ### `createEnrollment({ courseId })`
 
 Requires Firebase Authentication. The callable derives the student UID from the auth context and reads the course and user profile from Firestore. It permits enrollment only when the course has an explicit zero price or the user's monthly subscription is active and unexpired. It uses the existing deterministic document ID `{uid}_{courseId}`, so repeated requests do not create duplicate enrollment records.
@@ -26,6 +30,22 @@ Requires authentication and the same course-access check. The server validates a
 ### `getLearningProgress({ courseId })`
 
 Returns only the authenticated user's progress record for the requested course.
+
+## Legacy content migration (not run)
+
+From the `functions` directory, first run a read-only dry run against the intended Firebase project:
+
+```sh
+npm run migrate:course-content -- --project=YOUR_PROJECT_ID
+```
+
+Review the output and confirm the project ID before any write. Only after an explicit approval to migrate that project, the write mode requires both flags:
+
+```sh
+npm run migrate:course-content -- --project=YOUR_PROJECT_ID --apply --confirm-project-id=YOUR_PROJECT_ID
+```
+
+The script uses Application Default Credentials. It does not deploy rules/functions. It copies legacy lesson arrays into `course_contents/{courseId}` and removes the embedded `lessons` field in one batch per course. Existing content documents are never overwritten; conflicts stop the script with a non-zero exit code. Do not run apply mode against production until the dry-run inventory and backup/recovery plan have been reviewed.
 
 ## Important rollout and security limitations
 
