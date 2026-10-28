@@ -56,7 +56,9 @@ jobs:
           java-version: '17'
 
       - name: Install root dependencies
-        run: npm ci
+        # The rules-unit-testing dependency was added to package.json before
+        # the lockfile was refreshed; npm install reconciles it in the runner.
+        run: npm install
 
       - name: Install Firebase CLI
         run: npm install --global firebase-tools@15.34.1
