@@ -21,7 +21,6 @@ Requires Firebase CLI and the npm package dependencies installed in the project 
 
 ```sh
 npm install
-npm install --save-dev @firebase/rules-unit-testing
 npm run test:rules
 ```
 
