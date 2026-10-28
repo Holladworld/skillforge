@@ -73,6 +73,7 @@ test("rejects unsupported or malformed lesson video URLs", () => {
     "https://youtube.com/watch?v=invalid",
     "https://youtube.com.evil.example/watch?v=abcdefghijk",
     "https://example.com/video.mp4",
+    "https://res.cloudinary.com/example/video/upload/v123/videos/lesson.mp4",
     "https://res.cloudinary.com/example/image/upload/picture.jpg",
   ]) {
     assert.throws(() => normalizeLessonVideoUrl(url));
